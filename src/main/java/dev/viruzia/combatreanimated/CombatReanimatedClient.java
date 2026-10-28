@@ -13,8 +13,13 @@ public class CombatReanimatedClient implements ClientModInitializer {
                 AttackAnimationController.LAYER_PRIORITY,
                 AttackAnimationController::new);
 
-        if (!EMFAnimationApi.registerAnimationHook(new EmfAttackPoseHook())) {
-            CombatReanimated.LOGGER.warn("Could not register the EMF animation hook; attack poses may be overwritten by EMF resource packs");
+        // registerAnimationHook is declared to throw Exception
+        try {
+            if (!EMFAnimationApi.registerAnimationHook(new EmfAttackPoseHook())) {
+                CombatReanimated.LOGGER.warn("Could not register the EMF animation hook; attack poses may be overwritten by EMF resource packs");
+            }
+        } catch (Exception e) {
+            CombatReanimated.LOGGER.error("Failed to register the EMF animation hook", e);
         }
     }
 }
