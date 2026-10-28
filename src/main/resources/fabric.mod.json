@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "combatreanimated",
+  "version": "${version}",
+  "name": "3RDP Combat Reanimated",
+  "description": "Third-person weapon attack animations that keep vanilla combat untouched. Works alongside Entity Model Features resource packs such as Fresh Animations: Player Extension.",
+  "authors": [
+    "ViruziA"
+  ],
+  "contact": {
+    "homepage": "https://github.com/FramelViruzia/3RDP-Combat-Reanimated",
+    "sources": "https://github.com/FramelViruzia/3RDP-Combat-Reanimated",
+    "issues": "https://github.com/FramelViruzia/3RDP-Combat-Reanimated/issues"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.viruzia.combatreanimated.CombatReanimatedClient"
+    ]
+  },
+  "mixins": [
+    "combatreanimated.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "playeranimator": ">=2.0.0-alpha1",
+    "entity_model_features": ">=3.3.2",
+    "entity_texture_features": ">=7.2"
+  }
+}
