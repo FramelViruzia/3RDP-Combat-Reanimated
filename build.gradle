@@ -1,5 +1,6 @@
 plugins {
-    id 'fabric-loom' version '1.7-SNAPSHOT'
+    // 1.16 because EMF/ETF jars from Modrinth were built with Loom 1.15+ (needs Gradle 9.4+, Java 21)
+    id 'fabric-loom' version '1.16.3'
 }
 
 version = project.mod_version
@@ -10,6 +11,13 @@ base {
 }
 
 repositories {
+    maven {
+        name = 'RedlanceMinecraft'
+        url = 'https://repo.redlance.org/public'
+        content {
+            includeGroupAndSubgroups 'com.zigythebird'
+        }
+    }
     exclusiveContent {
         forRepository {
             maven {
@@ -30,7 +38,10 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Required at runtime; players install these themselves (declared in fabric.mod.json)
-    modImplementation "maven.modrinth:playeranimator:${project.player_anim_version}"
+    modImplementation("com.zigythebird.playeranim:PlayerAnimationLibFabric:${project.pal_version}") {
+        // The Fabric jar already contains the core classes
+        exclude group: 'com.zigythebird.playeranim', module: 'PlayerAnimationLibCore'
+    }
     modImplementation "maven.modrinth:entity-model-features:${project.emf_version}"
     modImplementation "maven.modrinth:entitytexturefeatures:${project.etf_version}"
 }

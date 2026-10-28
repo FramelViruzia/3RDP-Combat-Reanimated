@@ -1,35 +1,39 @@
 package dev.viruzia.combatreanimated;
 
-import dev.kosmx.playerAnim.api.firstPerson.FirstPersonMode;
-import dev.kosmx.playerAnim.api.layered.IAnimation;
-import dev.kosmx.playerAnim.api.layered.KeyframeAnimationPlayer;
-import dev.kosmx.playerAnim.api.layered.ModifierLayer;
-import dev.kosmx.playerAnim.api.layered.modifier.AbstractFadeModifier;
-import dev.kosmx.playerAnim.api.layered.modifier.AdjustmentModifier;
-import dev.kosmx.playerAnim.api.layered.modifier.MirrorModifier;
-import dev.kosmx.playerAnim.core.data.KeyframeAnimation;
-import dev.kosmx.playerAnim.core.util.Ease;
-import dev.kosmx.playerAnim.core.util.Vec3f;
-import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationRegistry;
+import com.zigythebird.playeranim.animation.PlayerAnimResources;
+import com.zigythebird.playeranim.animation.PlayerAnimationController;
+import com.zigythebird.playeranim.api.PlayerAnimationAccess;
+import com.zigythebird.playeranimcore.animation.Animation;
+import com.zigythebird.playeranimcore.animation.ExtraAnimationData;
+import com.zigythebird.playeranimcore.animation.layered.modifier.AbstractFadeModifier;
+import com.zigythebird.playeranimcore.animation.layered.modifier.AdjustmentModifier;
+import com.zigythebird.playeranimcore.animation.layered.modifier.MirrorModifier;
+import com.zigythebird.playeranimcore.api.firstPerson.FirstPersonMode;
+import com.zigythebird.playeranimcore.easing.EasingType;
+import com.zigythebird.playeranimcore.enums.PlayState;
+import com.zigythebird.playeranimcore.math.Vec3f;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Per-player attack animation state. Purely visual: it reads the vanilla swing and attack speed,
- * and never changes attacks, cooldowns, damage or hit detection.
+ * Per-player attack animation layer (one per player, created by Player Animation Library's factory).
+ * Purely visual: it reads the vanilla swing and attack speed, and never changes attacks, cooldowns,
+ * damage or hit detection.
  *
  * Timing: Better Combat animations wind up from tick 0 to {@code beginTick} and strike right after it,
  * because Better Combat deals damage late. Vanilla deals damage on click, so playback starts at the
  * wind-up pose, plays the strike in {@link #STRIKE_REAL_TICKS}, and stretches the rest of the animation
  * over the remaining attack cooldown.
  */
-public class AttackAnimationController {
+public class AttackAnimationController extends PlayerAnimationController {
+    public static final ResourceLocation LAYER_ID = CombatReanimated.id("attack");
     public static final int LAYER_PRIORITY = 2000;
 
     /** Animation ticks after {@code beginTick} that make up the strike itself. */
@@ -43,7 +47,6 @@ public class AttackAnimationController {
     /** Combo restarts after idling this many attack cooldowns. */
     private static final float COMBO_RESET_COOLDOWNS = 3F;
 
-    private final ModifierLayer<IAnimation> layer = new ModifierLayer<>(null);
     private final PhasedSpeedModifier speed = new PhasedSpeedModifier();
     private final MirrorModifier mirror = new MirrorModifier();
 
@@ -53,18 +56,36 @@ public class AttackAnimationController {
     private float durationTicks = 0;
 
     public AttackAnimationController(AbstractClientPlayer player) {
-        mirror.setEnabled(false);
-        // Each is inserted at the front, so the final order is mirror -> speed -> look adjustment
-        layer.addModifier(new AdjustmentModifier(part -> lookAdjustment(player, part)), 0);
-        layer.addModifier(speed, 0);
-        layer.addModifier(mirror, 0);
+        // Only plays animations we trigger; nothing loops on its own
+        super(player, (controller, state, animationSetter) -> PlayState.STOP);
+        mirror.enabled = false;
+        addModifier(mirror, 0);
+        addModifier(speed, 0);
+        addModifierLast(new AdjustmentModifier(this::lookAdjustment));
+        // NONE keeps the vanilla first-person hand; animations show in third person and to other players
+        setFirstPersonMode(FirstPersonMode.NONE);
+        setPostAnimationSetupConsumer(bones -> {
+            var torso = bones.apply("torso");
+            if (torso != null) {
+                torso.setEnabled(true);
+            }
+            // Head keeps following the camera
+            var head = bones.apply("head");
+            if (head != null) {
+                head.rotXEnabled = false;
+            }
+        });
     }
 
-    public ModifierLayer<IAnimation> layer() {
-        return layer;
+    @Nullable
+    public static AttackAnimationController of(AbstractClientPlayer player) {
+        return PlayerAnimationAccess.getPlayerAnimationLayer(player, LAYER_ID) instanceof AttackAnimationController controller
+                ? controller
+                : null;
     }
 
-    public void onSwingStart(AbstractClientPlayer player, InteractionHand hand) {
+    public void onSwingStart(InteractionHand hand) {
+        AbstractClientPlayer player = getPlayer();
         // swing() can run more than once in a tick
         if (player.tickCount == lastSwingTick) {
             return;
@@ -84,32 +105,28 @@ public class AttackAnimationController {
         ResourceLocation id = combo.get(comboIndex % combo.size());
         comboIndex = (comboIndex + 1) % combo.size();
 
-        KeyframeAnimation animation = (KeyframeAnimation) PlayerAnimationRegistry.getAnimation(id);
+        Animation animation = PlayerAnimResources.getAnimation(id);
         if (animation == null) {
             CombatReanimated.LOGGER.warn("Missing player animation {}", id);
             return;
         }
 
-        KeyframeAnimation.AnimationBuilder copy = animation.mutableCopy();
-        // Head keeps following the camera
-        copy.head.pitch.setEnabled(false);
-        copy.torso.fullyEnablePart(true);
-
-        float begin = animation.beginTick;
-        float strikeEnd = Math.min(begin + STRIKE_ANIMATION_TICKS, animation.stopTick);
+        // For Player Animator format files, length() is the stopTick
+        float stop = animation.length();
+        float begin = tickData(animation, ExtraAnimationData.BEGIN_TICK_KEY, 0F);
+        float strikeEnd = Math.min(begin + STRIKE_ANIMATION_TICKS, stop);
         float strikeReal = Math.min(STRIKE_REAL_TICKS, cooldown * 0.5F);
         float remainingReal = Math.max(cooldown - strikeReal, 1F);
         speed.configure(strikeReal,
                 (strikeEnd - begin) / strikeReal,
-                (animation.stopTick - strikeEnd) / remainingReal);
+                (stop - strikeEnd) / remainingReal);
 
         boolean leftHanded = player.getMainArm() == HumanoidArm.LEFT;
-        mirror.setEnabled((hand == InteractionHand.OFF_HAND) != leftHanded);
+        mirror.enabled = (hand == InteractionHand.OFF_HAND) != leftHanded;
 
-        KeyframeAnimationPlayer animationPlayer = new KeyframeAnimationPlayer(copy.build(), animation.beginTick);
-        // NONE keeps the vanilla first-person hand; animations show in third person and to other players
-        animationPlayer.setFirstPersonMode(FirstPersonMode.NONE);
-        layer.replaceAnimationWithFade(AbstractFadeModifier.standardFadeIn(FADE_IN_TICKS, Ease.INOUTSINE), animationPlayer);
+        // Fade from the current pose, then restart the same animation from the wind-up pose
+        replaceAnimationWithFade(AbstractFadeModifier.standardFadeIn(FADE_IN_TICKS, EasingType.EASE_IN_OUT_SINE), animation, true);
+        triggerAnimation(animation, begin);
 
         startAge = player.tickCount;
         durationTicks = cooldown;
@@ -121,7 +138,7 @@ public class AttackAnimationController {
      */
     public float weight(float ageInTicks) {
         float t = ageInTicks - startAge;
-        if (t < 0 || t >= durationTicks || !layer.isActive()) {
+        if (t < 0 || t >= durationTicks || !isActive()) {
             return 0F;
         }
         float in = Mth.clamp(t / FADE_IN_TICKS, 0F, 1F);
@@ -129,20 +146,25 @@ public class AttackAnimationController {
         return Math.min(in, out);
     }
 
-    /** Leans the body and arms with the camera pitch so swings follow where the player looks. */
-    private static Optional<AdjustmentModifier.PartModifier> lookAdjustment(AbstractClientPlayer player, String part) {
+    private static float tickData(Animation animation, String key, float fallback) {
+        return animation.data().getRaw(key) instanceof Number number ? number.floatValue() : fallback;
+    }
+
+    /** Leans the torso and arms with the camera pitch so swings follow where the player looks. */
+    private Optional<AdjustmentModifier.PartModifier> lookAdjustment(String part) {
         if (FirstPersonMode.isFirstPersonPass()) {
             return Optional.empty();
         }
-        float pitch = (float) Math.toRadians(player.getXRot());
+        float pitch = (float) Math.toRadians(getPlayer().getXRot());
         return switch (part) {
-            case "body" -> Optional.of(rotateX(-pitch * 0.75F));
-            case "rightArm", "leftArm" -> Optional.of(rotateX(pitch * 0.25F));
+            // Same factors as Better Combat 2.x applied to its torso; arms match in both libraries
+            case "torso" -> Optional.of(rotateX(-pitch * 0.75F));
+            case "right_arm", "left_arm" -> Optional.of(rotateX(pitch * 0.25F));
             default -> Optional.empty();
         };
     }
 
     private static AdjustmentModifier.PartModifier rotateX(float angle) {
-        return new AdjustmentModifier.PartModifier(new Vec3f(angle, 0, 0), new Vec3f(0, 0, 0));
+        return new AdjustmentModifier.PartModifier(new Vec3f(angle, 0, 0), Vec3f.ZERO);
     }
 }

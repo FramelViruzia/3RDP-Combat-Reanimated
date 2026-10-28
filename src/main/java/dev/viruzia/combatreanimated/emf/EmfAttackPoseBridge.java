@@ -1,8 +1,9 @@
 package dev.viruzia.combatreanimated.emf;
 
-import dev.viruzia.combatreanimated.AttackAnimatable;
+import dev.viruzia.combatreanimated.AttackAnimationController;
 import net.minecraft.client.model.PlayerModel;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
@@ -10,8 +11,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Hands the attack pose from PlayerModel.setupAnim (where playerAnimator applies it) to the EMF
- * hook that runs right after EMF animates the same model for the same render call.
+ * Hands the attack pose from PlayerModel.setupAnim (where Player Animation Library applies it) to the
+ * EMF hook that runs right after EMF animates the same model for the same render call.
  * Render thread only.
  */
 public final class EmfAttackPoseBridge {
@@ -19,16 +20,17 @@ public final class EmfAttackPoseBridge {
 
     private EmfAttackPoseBridge() {}
 
-    public static void capture(PlayerModel<?> model, LivingEntity entity, float ageInTicks) {
-        if (!(entity instanceof AttackAnimatable animatable)) {
+    public static void capture(PlayerModel<?> model, Entity entity, float ageInTicks) {
+        if (!(entity instanceof AbstractClientPlayer player)) {
             return;
         }
-        float weight = animatable.combatreanimated$attackController().weight(ageInTicks);
+        AttackAnimationController controller = AttackAnimationController.of(player);
+        float weight = controller == null ? 0F : controller.weight(ageInTicks);
         if (weight <= 0F) {
-            PENDING.remove(entity.getUUID());
+            PENDING.remove(player.getUUID());
             return;
         }
-        PENDING.put(entity.getUUID(), CapturedAttackPose.capture(model, weight));
+        PENDING.put(player.getUUID(), CapturedAttackPose.capture(model, weight));
     }
 
     /** Removes the pose so each capture is applied at most once. */

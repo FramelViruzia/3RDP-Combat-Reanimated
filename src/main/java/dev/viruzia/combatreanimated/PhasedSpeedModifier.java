@@ -1,6 +1,7 @@
 package dev.viruzia.combatreanimated;
 
-import dev.kosmx.playerAnim.api.layered.modifier.SpeedModifier;
+import com.zigythebird.playeranimcore.animation.AnimationData;
+import com.zigythebird.playeranimcore.animation.layered.modifier.SpeedModifier;
 
 /**
  * Plays the start of an animation at one speed and the rest at another,
@@ -11,6 +12,10 @@ public class PhasedSpeedModifier extends SpeedModifier {
     private float firstSpeed = 1;
     private float secondSpeed = 1;
     private int elapsedTicks = 0;
+
+    public PhasedSpeedModifier() {
+        super(1F);
+    }
 
     public void configure(float switchAfterTicks, float firstSpeed, float secondSpeed) {
         this.switchAfterTicks = switchAfterTicks;
@@ -25,15 +30,16 @@ public class PhasedSpeedModifier extends SpeedModifier {
     }
 
     @Override
-    public void tick() {
+    public void tick(AnimationData state) {
         this.speed = speedAt(elapsedTicks);
-        super.tick();
+        super.tick(state);
         elapsedTicks++;
     }
 
     @Override
-    public void setupAnim(float tickDelta) {
-        this.speed = speedAt(elapsedTicks + tickDelta);
-        super.setupAnim(tickDelta);
+    public void setupAnim(AnimationData state) {
+        // Read before super, which rewrites the partial tick for the layers below
+        this.speed = speedAt(elapsedTicks + state.getPartialTick());
+        super.setupAnim(state);
     }
 }

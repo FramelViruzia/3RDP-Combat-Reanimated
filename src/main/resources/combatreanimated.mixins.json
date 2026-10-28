@@ -4,7 +4,6 @@
   "package": "dev.viruzia.combatreanimated.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "AbstractClientPlayerMixin",
     "LivingEntityMixin",
     "PlayerModelMixin"
   ],
